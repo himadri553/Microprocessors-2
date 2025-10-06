@@ -1,3 +1,11 @@
+/*
+  Lab 1: Traffic Light Controller
+  EECE.5520 - Microprocessor II and Embedded System Design
+
+  Himadri Saha, 
+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "lab1_keypadControl.ino"
