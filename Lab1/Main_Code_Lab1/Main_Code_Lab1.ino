@@ -136,88 +136,23 @@ void update_display(unsigned char seconds_left) {
   digitalWrite(latch_pin,HIGH);
 }
 
-int test_func_leds(){ 
-  /*
-  Test function to use without assembly code, and without keypad to run LEDs. 
-  Take this code, paste to main, and write set_led_assembly. Also integrate with keypad and 7 segment display
-  ALSO NEED TO INTEGRATE BUZZER
-  */
-  /* 
-    Start loop by checking for user keypad input 
-    (is getting missed, user should be able to input at any point, while light sequence is still running)
-  */
+void read_keypad() {
   char userKey = keypad.getKey();
   if (userKey) {
-    if (userKey == '#') {     // Output command
+    // Output command
+    if (userKey == '#') {   
       Serial.print("Command received: ");
       Serial.println(inputBuffer);
       inputBuffer = "";
+
+      // reasign new timeing var here
+
     }
-    else {
-      inputBuffer += userKey; // Add keypresses to command
+    // Add keypresses to command
+    else {                    
+      inputBuffer += userKey;
     }
   }
-
-  //main loop. will loop lights after times are confirmed
-  while(true){
-    /* STATE 1 RUNNING STATE, main redlight on, cross greenlight on */
-    digitalWrite(red_main, HIGH);     //turn on main redlight
-    digitalWrite(green_cross, HIGH);  //turn on cross greenlight
-    start_time=millis();              //get start time offset
-    //loop until 6 seconds left in main redlight time
-    while((main_time_redlight-((current_time-start_time))/1000)>6){ 
-      current_time=millis();
-    }
-      
-    /* STATE 2 RUNNING STATE, main redlight on, cross greenlight blinking */
-    for(int i=0;i<3;i++){             //blink the cross green light for 3 secs then turn it off. Main redlight stays ON. one loop is 1 sec 
-      digitalWrite(green_cross,HIGH); //turn on light
-      delay(500);                     //wait 500ms (0.5s)
-      digitalWrite(green_cross,LOW);  //turn off light
-      delay(500);                     //wait 500ms
-    }
-      
-    /* STATE 3 RUNNING STATE, main redlight blinking, cross yellowlight on */
-    digitalWrite(yellow_cross,HIGH);    //turn on cross yellow light
-    for(int i=0;i<3;i++){               //blink main redlight for 3 secs then turn off
-      digitalWrite(red_main,HIGH);      //turn on light
-      delay(500);                       //wait 500ms (0.5s)
-      digitalWrite(red_main,LOW);       //turn off light
-      delay(500);                       //wait 500ms
-    }
-    digitalWrite(yellow_cross,LOW);     //turn off cross yellowlight
-        
-    /* STATE 4 RUNNING STATE, main greenlight on, cross redlight is on */
-    digitalWrite(green_main, HIGH);   //turn on main greenlight
-    digitalWrite(red_cross, HIGH);    //turn on cross redlight
-    start_time=millis();              //get start time offset
-    current_time=millis();
-    //loop until 3 seconds left in main greenlight time
-    while((main_time_greenlight-((current_time-start_time)/1000))>3){ 
-      current_time=millis();          //get current time
-    }
-        
-    /* STATE 5 RUNNING STATE, main greenlight blinking, cross redlight on */
-    for(int i=0;i<3;i++){             //blink main redlight for 3 secs then turn off
-      digitalWrite(green_main,HIGH);  //turn on light
-      delay(500);                     //wait 500ms (0.5s)
-      digitalWrite(green_main,LOW);   //turn off light
-      delay(500);                     //wait 500ms
-    }
-
-    /* STATE 6 RUNNING STATE, main yellowlight on, cross redlight blinking */
-    digitalWrite(yellow_main,HIGH);
-    for(int i=0;i<3;i++){             //blink main redlight for 3 secs then turn off
-      digitalWrite(red_cross,HIGH);   //turn on light
-      delay(500);                     //wait 500ms (0.5s)
-      digitalWrite(red_cross,LOW);    //turn off light
-      delay(500);                     //wait 500ms
-    }
-    digitalWrite(yellow_main,LOW);    //turn off cross yellowlight
-
-    //LOOPS BACK TO STATE 1 RUNNING STATE...^
-  }
-
 }
 
 /* Main runner functions */
@@ -256,77 +191,58 @@ void setup() {
 
 }
 
-void loop(){
-  Serial.begin(9600); 
-
-  // for testing: test_func_leds();
-  
+void loop(){  
   /* Check and get keypad input at start of loop (change so that it changes the times it runs as well)*/ 
-  char userKey = keypad.getKey();
-  if (userKey) {
-    // Output command
-    if (userKey == '#') {   
-      Serial.print("Command received: ");
-      Serial.println(inputBuffer);
-      inputBuffer = "";
-    }
-    // Add keypresses to command
-    else {                    
-      inputBuffer += userKey;
-    }
-  }
+  read_keypad();
 
-  /* Advance state machine only when ISR heartbeat says to */   
-  if (tick_flag) { // runs when "heart beats"
-    
-    // reset tick flag and decrement timer
+
+
+  /* state machine - update led based on state  */
+  if (tick_flag) {
     tick_flag = false;
     countdown_timer--;
 
-    // state machine
-    switch (state) {
-      case 1:
-        state = 2;
-        countdown_timer = 3;
-        Serial.print("main redlight on, cross greenlight on");
-        break;
-
-      case 2:
-        state = 3;
-        countdown_timer = 3;
-        Serial.print("main redlight on, cross greenlight blinking");
-        break;
-
-      case 3:
-        state = 4;
-        countdown_timer = main_time_greenlight - 3;
-        Serial.print("main redlight blinking, cross yellowlight on ");
-        break;
-
-      case 4:
-        state = 5;
-        countdown_timer = 3;
-        Serial.print("main greenlight on, cross redlight is on");
-        break;
-
-      case 5:
-        state = 6;
-        countdown_timer = 3;
-        Serial.print("main greenlight blinking, cross redlight on");
-        break;
-
-      case 6:
-        state = 1;
-        countdown_timer = main_time_redlight - 6;
-        Serial.print("main yellowlight on, cross redlight blinking");
-        break;
-
+    // Only advance state when countdown_timer hits 0
+    if (countdown_timer <= 0) {
+      switch (state) {
+        case 1:
+          state = 2;
+          countdown_timer = 3;
+          Serial.println("state 1 -> 2");
+          break;
+        case 2:
+          state = 3;
+          countdown_timer = 3;
+          Serial.println("state 2 -> 3");
+          break;
+        case 3:
+          state = 4;
+          countdown_timer = main_time_greenlight - 3;
+          Serial.println("state 3 -> 4");
+          break;
+        case 4:
+          state = 5;
+          countdown_timer = 3;
+          Serial.println("state 4 -> 5");
+          break;
+        case 5:
+          state = 6;
+          countdown_timer = 3;
+          Serial.println("state 5 -> 6");
+          break;
+        case 6:
+          state = 1;
+          countdown_timer = main_time_redlight - 6;
+          Serial.println("state 6 -> 1");
+          break;
+      }
     }
+  
+    update_leds(state);
   }
-
-  /* Update outputs (led, buzzer and display) */
-  // update led based on state
-  update_leds(state);
+  
+  // update display
+  update_display(3);
 
   // Buzzer beep at 3 mark
   if (countdown_timer <= 3 && countdown_timer > 0) {
@@ -335,8 +251,5 @@ void loop(){
     digitalWrite(buzzer_pin, LOW);
   }
 
-  // update display
-  update_display(countdown_timer);
+  delay(100);
 }
-
-
