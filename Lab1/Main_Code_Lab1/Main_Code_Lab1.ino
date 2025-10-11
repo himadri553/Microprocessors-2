@@ -11,8 +11,8 @@
   Buzzer: PWM 13
   7 segment display (by wires):
     Clock (green): 4
-    Data (orange): 3
-    Latch (yellow): 2
+    Latch (orange): 3
+    Data (yellow): 2
   
   TODO:
   Project description said to use timer interupts to advance state machine??? 
@@ -20,6 +20,9 @@
   - used to advance state machine 
   - would check for keypad press and act accordingly
   - current time could be refrenced using the heartbeat for led timing and displaying 
+
+  OLD State machine only using millis:
+  
 
 */
 
@@ -38,14 +41,14 @@
 #define  red_cross 49 
 #define  buzzer_pin 13
 #define  clock_pin 4
-#define  data_pin 3
-#define  latch_pin 2
+#define  latch_pin 3
+#define  data_pin 2
 
 /* Init Vars */
- // timing and state transistion stuff
-volatile bool tick_flag = false;   
-int countdown_timer = 0;
-int state = 1;             
+ // timing and state transistion stuff  
+bool phase1_flag = false;
+int state;  
+int display_time;           
 // Keypad setup (from elegoo setup code) 
 const byte ROWS = 4; 
 const byte COLS = 4; 
@@ -73,92 +76,47 @@ unsigned long current_time=0;
 String inputBuffer = "";
 
 /* Helper functions */
-// ISR to signal main loop that 1s passed
-ISR(TIMER1_COMPA_vect) {
-  tick_flag = true; 
-}
-
-/* needs to be checked... */
-void update_leds(int s) {
-  // Reset all lights first
-  digitalWrite(red_main, LOW);
-  digitalWrite(yellow_main, LOW);
-  digitalWrite(green_main, LOW);
-  digitalWrite(red_cross, LOW);
-  digitalWrite(yellow_cross, LOW);
-  digitalWrite(green_cross, LOW);
-
-  // For blinking, we’ll use millis() to toggle every 500ms
-  static unsigned long lastBlink = 0;
-  static bool blinkOn = false;
-
-  if (millis() - lastBlink >= 500) {
-    blinkOn = !blinkOn;
-    lastBlink = millis();
-  }
-
-  switch (s) {
-    case 1: // Main RED on, Cross GREEN on (steady)
-      digitalWrite(red_main, HIGH);
-      digitalWrite(green_cross, HIGH);
-      break;
-
-    case 2: // Main RED steady, Cross GREEN blinking
-      digitalWrite(red_main, HIGH);
-      if (blinkOn) digitalWrite(green_cross, HIGH);
-      break;
-
-    case 3: // Main RED blinking, Cross YELLOW steady
-      digitalWrite(yellow_cross, HIGH);
-      if (blinkOn) digitalWrite(red_main, HIGH);
-      break;
-
-    case 4: // Main GREEN steady, Cross RED steady
-      digitalWrite(green_main, HIGH);
-      digitalWrite(red_cross, HIGH);
-      break;
-
-    case 5: // Main GREEN blinking, Cross RED steady
-      digitalWrite(red_cross, HIGH);
-      if (blinkOn) digitalWrite(green_main, HIGH);
-      break;
-
-    case 6: // Main YELLOW steady, Cross RED blinking
-      digitalWrite(yellow_main, HIGH);
-      if (blinkOn) digitalWrite(red_cross, HIGH);
-      break;
-  }
-}
-
 void update_display(unsigned char seconds_left) {
   digitalWrite(latch_pin,LOW);
   shiftOut(data_pin,clock_pin,MSBFIRST,table[seconds_left]);
   digitalWrite(latch_pin,HIGH);
 }
 
-void read_keypad() {
-  char userKey = keypad.getKey();
-  if (userKey) {
-    // Output command
-    if (userKey == '#') {   
-      Serial.print("Command received: ");
-      Serial.println(inputBuffer);
-      inputBuffer = "";
+ISR(TIMER1_COMPA_vect) {
+  if (display_time < 0) {
+    update_display(0);
+  }
+  else if (display_time > 8){
+    update_display(8);
+  }
+  else {
+    update_display(display_time);
+  }
 
-      // reasign new timeing var here
+  display_time--;
+}
 
-    }
-    // Add keypresses to command
-    else {                    
-      inputBuffer += userKey;
+String read_keypad() {
+  char userKey;
+  while (true) {
+    userKey = keypad.getKey();
+    if (userKey) {
+      return String(userKey);
     }
   }
+}
+
+void beep() {
+  digitalWrite(buzzer_pin, HIGH);
+  delay(100);
+  digitalWrite(buzzer_pin, LOW);
 }
 
 /* Main runner functions */
 void setup() {
   // Pin and serial setup
   Serial.begin(9600);
+  Serial.println();
   pinMode(green_main,OUTPUT);
   pinMode(yellow_main,OUTPUT);
   pinMode(red_main,OUTPUT);
@@ -170,86 +128,163 @@ void setup() {
   pinMode(clock_pin,OUTPUT);
   pinMode(data_pin,OUTPUT);
 
-  /*
-    Setup timer - CTC mode
-    1 sec at 16MHz/1024
-    Prescaler 1024
-    Enable Timer1 compare interrupt
-  */ 
+  // Setup Timer1 for 1Hz
   TCCR1A = 0;
   TCCR1B = 0;
-  TCNT1  = 0;
-  OCR1A = 15624;                       
-  TCCR1B |= (1 << WGM12);              
-  TCCR1B |= (1 << CS12) | (1 << CS10); 
-  TIMSK1 |= (1 << OCIE1A);              
+  TCNT1 = 0;
+  OCR1A = 15624;                        // 16 MHz / 1024 / 1 Hz
+  TCCR1B |= (1 << WGM12);              // CTC mode
+  TCCR1B |= (1 << CS12) | (1 << CS10); // Prescaler 1024
+  TIMSK1 |= (1 << OCIE1A);             // Enable compare match interrupt
   sei();
 
   // Initalize state machine
-  state = 1;
-  countdown_timer = main_time_redlight;
+  state = 0;
+  phase1_flag = true;
 
+  update_display(0);
 }
 
 void loop(){  
-  /* Check and get keypad input at start of loop (change so that it changes the times it runs as well)*/ 
-  read_keypad();
+  /* Phase 1 - Use keypad to set times */ 
+  if (phase1_flag) {
 
-
-
-  /* state machine - update led based on state  */
-  if (tick_flag) {
-    tick_flag = false;
-    countdown_timer--;
-
-    // Only advance state when countdown_timer hits 0
-    if (countdown_timer <= 0) {
-      switch (state) {
-        case 1:
-          state = 2;
-          countdown_timer = 3;
-          Serial.println("state 1 -> 2");
-          break;
-        case 2:
-          state = 3;
-          countdown_timer = 3;
-          Serial.println("state 2 -> 3");
-          break;
-        case 3:
-          state = 4;
-          countdown_timer = main_time_greenlight - 3;
-          Serial.println("state 3 -> 4");
-          break;
-        case 4:
-          state = 5;
-          countdown_timer = 3;
-          Serial.println("state 4 -> 5");
-          break;
-        case 5:
-          state = 6;
-          countdown_timer = 3;
-          Serial.println("state 5 -> 6");
-          break;
-        case 6:
-          state = 1;
-          countdown_timer = main_time_redlight - 6;
-          Serial.println("state 6 -> 1");
-          break;
+    // Wait for "*" to start input phase with blinking leds
+    Serial.println("Waiting for * to begin input...");
+    while (true) {
+      digitalWrite(red_main, HIGH);
+      digitalWrite(red_cross, HIGH);
+      String key = read_keypad();
+      if (key == "*") {
+        Serial.println("Begin entering command:");
+        digitalWrite(red_main, LOW);
+        digitalWrite(red_cross, LOW);
+        break;
       }
     }
-  
-    update_leds(state);
+
+    // Now gather full command (expecting [letter][digit][digit][#])
+    String inputBuffer = "";
+    while (true) {
+      String key = read_keypad();
+      inputBuffer += key;
+
+      if (key == "#") {
+        // Got complete input — validate format
+        if (inputBuffer.length() == 4 &&
+            isAlpha(inputBuffer[0]) &&
+            isDigit(inputBuffer[1]) &&
+            isDigit(inputBuffer[2]) &&
+            inputBuffer[3] == '#') {
+            
+          Serial.print("Valid command: ");
+          Serial.println(inputBuffer);
+
+          // extract and apply values
+          char letter = inputBuffer[0];
+          int num1 = inputBuffer[1] - '0';
+          int num2 = inputBuffer[2] - '0';
+          int full_value = num1 * 10 + num2;
+          if (letter == 'A') main_time_redlight = full_value;
+          if (letter == 'B') main_time_greenlight = full_value;
+          Serial.println(main_time_redlight);
+          Serial.println(main_time_greenlight);
+
+          break;
+        } else {
+          Serial.print("Invalid format: ");
+          Serial.println(inputBuffer);
+          inputBuffer = "";  // Reset for new input
+        }
+      }
+    }
+  }
+
+  /* Phase 2 - Cycle thru LEDs */
+  while (true) {
+    switch (state){
+      case 0:
+        /* STATE 1 RUNNING STATE, main redlight on, cross greenlight on */
+        display_time = main_time_redlight;
+        digitalWrite(red_main, HIGH);     //turn on main redlight
+        digitalWrite(green_cross, HIGH);  //turn on cross greenlight
+        start_time=millis();              //get start time offset              
+        while((main_time_redlight-((current_time-start_time))/1000)>6){ 
+          current_time=millis();
+        }
+
+        beep();
+        state = 1;
+        break;
+      
+      case 1:
+        /* STATE 2 RUNNING STATE, main redlight on, cross greenlight blinking */
+        for(int i=0;i<3;i++){             //blink the cross green light for 3 secs then turn it off. Main redlight stays ON. one loop is 1 sec 
+          digitalWrite(green_cross,HIGH); //turn on light
+          delay(500);                     //wait 500ms (0.5s)
+          digitalWrite(green_cross,LOW);  //turn off light
+          delay(500);                     //wait 500ms
+        }
+
+        state = 2;
+        break;
+      
+      case 2:
+        /* STATE 3 RUNNING STATE, main redlight blinking, cross yellowlight on */
+        digitalWrite(yellow_cross,HIGH);    //turn on cross yellow light
+        for(int i=0;i<3;i++){               //blink main redlight for 3 secs then turn off
+          digitalWrite(red_main,HIGH);      //turn on light
+          delay(500);                       //wait 500ms (0.5s)
+          digitalWrite(red_main,LOW);       //turn off light
+          delay(500);                       //wait 500ms
+        }
+        digitalWrite(yellow_cross,LOW);     //turn off cross yellowlight
+
+        state = 3;
+        break;
+
+      case 3:
+        /* STATE 4 RUNNING STATE, main greenlight on, cross redlight is on */
+        digitalWrite(green_main, HIGH);   //turn on main greenlight
+        digitalWrite(red_cross, HIGH);    //turn on cross redlight
+        start_time=millis();              //get start time offset
+        current_time=millis();
+        //loop until 3 seconds left in main greenlight time
+        while((main_time_greenlight - ((current_time-start_time)/1000)) > 3) {
+          current_time=millis();          //get current time
+        }
+
+        beep();
+        state = 4;
+        break;
+
+      case 4:
+        /* STATE 5 RUNNING STATE, main greenlight blinking, cross redlight on */
+        for(int i=0;i<3;i++){             //blink main redlight for 3 secs then turn off
+          digitalWrite(green_main,HIGH);  //turn on light
+          delay(500);                     //wait 500ms (0.5s)
+          digitalWrite(green_main,LOW);   //turn off light
+          delay(500);                     //wait 500ms
+        }
+
+        state = 5;
+        break;
+
+      case 5:
+        /* STATE 6 RUNNING STATE, main yellowlight on, cross redlight blinking */
+        digitalWrite(yellow_main,HIGH);
+        for(int i=0;i<3;i++){             //blink main redlight for 3 secs then turn off
+          digitalWrite(red_cross,HIGH);   //turn on light
+          delay(500);                     //wait 500ms (0.5s)
+          digitalWrite(red_cross,LOW);    //turn off light
+          delay(500);                     //wait 500ms
+        }
+        digitalWrite(yellow_main,LOW);    //turn off cross yellowlight
+
+        state = 0;
+        break;
+    }
   }
   
-  // update display
-  update_display(3);
-
-  // Buzzer beep at 3 mark
-  if (countdown_timer <= 3 && countdown_timer > 0) {
-    digitalWrite(buzzer_pin, HIGH);
-  } else {
-    digitalWrite(buzzer_pin, LOW);
-  }
-
   delay(100);
 }

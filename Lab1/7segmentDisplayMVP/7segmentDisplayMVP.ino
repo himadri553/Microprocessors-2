@@ -9,8 +9,8 @@
 #include <avr/interrupt.h>
 
 /*Pins*/
-int latch=9;  
 int clock_pin=10; 
+int latch=9; 
 int data=8;   
 
 /*Vars*/
