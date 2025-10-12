@@ -2,7 +2,7 @@
   Lab 1: Traffic Light Controller
   EECE.5520 - Microprocessor II and Embedded System Design
 
-  Himadri Saha, Dan Burns, Chris Worthley
+  Himadri Saha, Daniel Burns, Chris Worthley
 
   PIN SETUP
   Keypad: (going from 1-8) 12 -> 5
@@ -20,10 +20,7 @@
   - used to advance state machine 
   - would check for keypad press and act accordingly
   - current time could be refrenced using the heartbeat for led timing and displaying 
-
-  OLD State machine only using millis:
   
-
 */
 
 /* Imports */
@@ -45,7 +42,7 @@
 #define  data_pin 2
 
 /* Init Vars */
- // timing and state transistion stuff  
+// timing and state transistion stuff  
 bool phase1_flag = false;
 int state;  
 int display_time;           
@@ -74,6 +71,9 @@ unsigned long current_time=0;
 
 // Keypad user input
 String inputBuffer = "";
+
+// Get assembly function
+extern "C" void set_red_leds_high();
 
 /* Helper functions */
 void update_display(unsigned char seconds_left) {
@@ -141,7 +141,6 @@ void setup() {
   // Initalize state machine
   state = 0;
   phase1_flag = true;
-
   update_display(0);
 }
 
@@ -152,8 +151,7 @@ void loop(){
     // Wait for "*" to start input phase with blinking leds
     Serial.println("Waiting for * to begin input...");
     while (true) {
-      digitalWrite(red_main, HIGH);
-      digitalWrite(red_cross, HIGH);
+      set_red_leds_high();
       String key = read_keypad();
       if (key == "*") {
         Serial.println("Begin entering command:");
