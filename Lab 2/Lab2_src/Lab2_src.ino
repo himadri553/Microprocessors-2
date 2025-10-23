@@ -41,9 +41,9 @@ int16_t GyX, GyY, GyZ;    // Raw Gyro values
 
 /* Helper functions */
 void beep() {
-  digitalWrite(buzzer_pin, HIGH);
+  digitalWrite(BUZZER, HIGH);
   delay(100);
-  digitalWrite(buzzer_pin, LOW);
+  digitalWrite(BUZZER, LOW);
 }
 
 void send_joystick_command(int x_val, int y_val) {
@@ -68,7 +68,7 @@ void setup() {
   Serial.begin(9600);
   pinMode(BUZZER, OUTPUT);
   pinMode(JOY_SW, INPUT_PULLUP);
-  
+
 }
 
 void loop() {
@@ -77,7 +77,7 @@ void loop() {
       /* Joystick Mode: Read joystick and send command */
       int joyX_val = analogRead(JOY_X);
       int joyY_val = analogRead(JOY_Y);
-      send_joystick_command(JOY_X, JOY_Y);
+      send_joystick_command(joyX_val, joyY_val);
 
       break;
 
@@ -97,4 +97,5 @@ void loop() {
     if (ch == 'E') beep();
   }
 
+  delay(100);
 }

@@ -17,7 +17,7 @@ import random
 import serial
 
 serialDevFile = 'COM3'
-ser=serial.Serial(serialDevFile, 9600, timeout=0)
+ser=serial.Serial(serialDevFile, 9600, timeout=1)
 
 delay = 0.1
 
@@ -96,6 +96,18 @@ def move():
         x = head.xcor()
         head.setx(x + 20)
 
+## Map controller inputs to key presses
+def convert_controller_to_key(char):
+    mapping = {
+        'w': go_up,
+        's': go_down,
+        'a': go_left,
+        'd': go_right
+    }
+    action = mapping.get(char.lower())
+    if action:
+        action()
+
 # Keyboard bindings
 wn.listen()
 wn.onkey(go_up, "w")
@@ -107,20 +119,12 @@ wn.onkey(go_right, "d")
 while True:
     wn.update()
 
-    # TODO: notes by Prof. Luo
-    # you need to add your code to read control information from serial port
-    # then use that information to set head.direction
-    # For example, 
-    # if control_information == 'w':
-    #     head.direction = "up"
-    # elif control_information == 's':
-    #     head.direction = "down"
-    # elif ......
-    #
-
     ## Input readings from Ardunio
+    if ser.in_waiting > 0:
+        controller_input = ser.read().decode('utf-8')
+        if controller_input:
+            convert_controller_to_key(controller_input)
     
-
     # Check for a collision with the border
     if head.xcor()>290 or head.xcor()<-290 or head.ycor()>290 or head.ycor()<-290:
         time.sleep(1)
