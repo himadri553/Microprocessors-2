@@ -22,120 +22,130 @@
   - Communication protocol:
 
 */
-/* Imports */
+/*
+  Lab 2: Game Control with Joystick / Gyro
+  EECE.5520 - Microprocessor II and Embedded System Design
+  Authors: Himadri Saha, Daniel Burns, Chris Worthley
+*/
+
 #include <Arduino.h>
 #include <Wire.h>
 
-/* Pin maps */
+/* Pins */
 #define BUZZER 13
 #define JOY_X A1
 #define JOY_Y A0
 #define JOY_SW 2
 
-/* Other Vars */
-#define JOY_deadZone 200    // 
-#define JOY_detRange 512    // 
-int controllerMode = 2;     // 1: Joystick, 2: Gyro
-int16_t GyX, GyY, GyZ;      // Raw Gyro values
-const int MPU_addr = 0x69;  // I2C address of the MPU-6050  
-#define GYRO_threshold 1000 // prevent noise on gyro
+/* Joystick */
+#define JOY_CENTER 512
+#define JOY_DEADZONE 150
 
-/* Helper functions */
+/* MPU-6050 */
+const int MPU_addr = 0x68;   // use 0x69 only if AD0 is tied HIGH
+#define TILT_THRESHOLD 0.20  // fraction of 1 g (~0.2 g) tilt to trigger
+
+/* State */
+int controllerMode = 1;      // 1 = joystick, 2 = gyro
+bool modeSelected = false;
+
+/* Raw sensor data */
+int16_t AcX, AcY, AcZ;
+int16_t GyX, GyY, GyZ;
+
 void beep() {
   digitalWrite(BUZZER, HIGH);
   delay(100);
   digitalWrite(BUZZER, LOW);
 }
 
-void send_joystick_command(int x_val, int y_val) {
-  if (x_val < JOY_detRange - JOY_deadZone) {
-    Serial.write('d');
-  }
-  else if (x_val > JOY_detRange + JOY_deadZone) {
-    Serial.write('a');
-  }
-  else if (y_val < JOY_detRange - JOY_deadZone) {
-    Serial.write('s');
-  }
-  else if (y_val > JOY_detRange + JOY_deadZone) {
-    Serial.write('w');
-  }
+/* Joystick control */
+void send_joystick_command() {
+  int x = analogRead(JOY_X);
+  int y = analogRead(JOY_Y);
+
+  if (x > JOY_CENTER + JOY_DEADZONE)
+    Serial.write('a'); // left
+  else if (x < JOY_CENTER - JOY_DEADZONE)
+    Serial.write('d'); // right
+  else if (y > JOY_CENTER + JOY_DEADZONE)
+    Serial.write('w'); // up
+  else if (y < JOY_CENTER - JOY_DEADZONE)
+    Serial.write('s'); // down
 }
 
-/* Runner functions */
+/* Gyro/Accelerometer control */
+void send_gyro_command() {
+  Wire.beginTransmission(MPU_addr);
+  Wire.write(0x3B);   // start at accel registers
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_addr, 14, true);
+
+  AcX = (Wire.read() << 8) | Wire.read();
+  AcY = (Wire.read() << 8) | Wire.read();
+  AcZ = (Wire.read() << 8) | Wire.read();
+  GyX = (Wire.read() << 8) | Wire.read();
+  GyY = (Wire.read() << 8) | Wire.read();
+  GyZ = (Wire.read() << 8) | Wire.read();
+
+  // Convert to g’s (assuming default ±2 g range)
+  float ax = AcX / 16384.0;
+  float ay = AcY / 16384.0;
+  float az = AcZ / 16384.0;
+
+  // Detect tilt direction
+  if (ax >  TILT_THRESHOLD)  Serial.write('a'); // tilt left
+  else if (ax < -TILT_THRESHOLD) Serial.write('d'); // tilt right
+  else if (ay >  TILT_THRESHOLD)  Serial.write('w'); // tilt up
+  else if (ay < -TILT_THRESHOLD) Serial.write('s'); // tilt down
+    // --- Detect shake gesture ---
+  // If any gyro axis changes quickly → considered a shake
+  if (abs(GyX) > 20000 || abs(GyY) > 20000 || abs(GyZ) > 20000) {
+    Serial.write('X'); // signal to Python
+  }
+
+}
+
 void setup() {
-  // Pin setup and serial
   Wire.begin();
   Serial.begin(9600);
   pinMode(BUZZER, OUTPUT);
   pinMode(JOY_SW, INPUT_PULLUP);
 
-  // Setup gyro   
+  // Wake MPU-6050
   Wire.beginTransmission(MPU_addr);
-  Wire.write(0x6B);   // Power management register
-  Wire.write(0);      // Wake up MPU6050
+  Wire.write(0x6B);
+  Wire.write(0);
   Wire.endTransmission(true);
 
-  // Prompt user for controller mode
-
-
+  Serial.println("Arduino ready. Send '1' (joystick) or '2' (gyro).");
 }
 
 void loop() {
-  switch(controllerMode) {
-    case 1:
-      /* Joystick Mode: Read joystick and send command */
-      Serial.println("Going into joystick mode...");
-      int joyX_val = analogRead(JOY_X);
-      int joyY_val = analogRead(JOY_Y);
-      send_joystick_command(joyX_val, joyY_val);
-
-      break;
-
-    case 2:
-      /* Gyro Mode:  */
-      // Request gyro registers (start at 0x43)
-      Wire.beginTransmission(MPU_addr);
-      Wire.write(0x43);
-      Wire.endTransmission(false);
-      Wire.requestFrom(MPU_addr, 6, true);  
-
-      GyX = Wire.read() << 8 | Wire.read();  
-      GyY = Wire.read() << 8 | Wire.read();  
-      GyZ = Wire.read() << 8 | Wire.read();  
-
-      Serial.print("GyX="); Serial.print(GyX);
-      Serial.print(" | GyY="); Serial.print(GyY);
-      Serial.print(" | GyZ="); Serial.println(GyZ);
-
-      /*
-            // Determine direction based on gyro tilt
-      // Positive X tilt → move right, Negative X tilt → move left
-      // Positive Y tilt → move up, Negative Y tilt → move down
-      if (GyX > GYRO_threshold)
-        Serial.write('d');   // tilt right
-      else if (GyX < -GYRO_threshold)
-        Serial.write('a');   // tilt left
-      else if (GyY > GYRO_threshold)
-        Serial.write('w');   // tilt up
-      else if (GyY < -GYRO_threshold)
-        Serial.write('s');   // tilt down
-      */
-        
-      break;
-
-    default:
-      Serial.println("Deafulting to joystick mode");
-      controllerMode = 1;
-  }
-
-  /*
-      // Beep on apple collect
-  if (Serial.available()) {
+  // Handle serial from Python
+  while (Serial.available() > 0) {
     char ch = Serial.read();
-    if (ch == 'E') beep();
+    if (ch == '1') {
+      controllerMode = 1;
+      modeSelected = true;
+      Serial.println("MODE: JOYSTICK");
+    } else if (ch == '2') {
+      controllerMode = 2;
+      modeSelected = true;
+      Serial.println("MODE: GYRO");
+    } else if (ch == 'E') {
+      beep();
+    }
   }
-  */
 
-  delay(500);
+  if (!modeSelected) controllerMode = 1;
+
+  if (controllerMode == 1)
+    send_joystick_command();
+  else
+    send_gyro_command();
+
+  delay(100);
 }
+
+
