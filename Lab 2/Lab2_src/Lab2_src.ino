@@ -43,7 +43,8 @@
 
 /* MPU-6050 */
 const int MPU_addr = 0x68;   // use 0x69 only if AD0 is tied HIGH
-#define TILT_THRESHOLD 0.20  // fraction of 1 g (~0.2 g) tilt to trigger
+#define TILT_THRESHOLD 0.8  // fraction of 1 g (~0.2 g) tilt to trigger
+#define SHAKE_THRESHOLD 32800
 
 /* State */
 int controllerMode = 1;      // 1 = joystick, 2 = gyro
@@ -94,16 +95,18 @@ void send_gyro_command() {
   float az = AcZ / 16384.0;
 
   // Detect tilt direction
-  if (ax >  TILT_THRESHOLD)  Serial.write('a'); // tilt left
-  else if (ax < -TILT_THRESHOLD) Serial.write('d'); // tilt right
-  else if (ay >  TILT_THRESHOLD)  Serial.write('w'); // tilt up
-  else if (ay < -TILT_THRESHOLD) Serial.write('s'); // tilt down
-    // --- Detect shake gesture ---
+  if (ax >  TILT_THRESHOLD)  Serial.write('a');       // tilt right
+  else if (ax < -TILT_THRESHOLD) Serial.write('d');   // tilt left
+  else if (ay >  TILT_THRESHOLD)  Serial.write('s');  // tilt up
+  else if (ay < -TILT_THRESHOLD) Serial.write('w');   // tilt down
+  
+  // --- Detect shake gesture ---
   // If any gyro axis changes quickly → considered a shake
-  if (abs(GyX) > 20000 || abs(GyY) > 20000 || abs(GyZ) > 20000) {
+  if (abs(GyX) > SHAKE_THRESHOLD || abs(GyY) > SHAKE_THRESHOLD || abs(GyZ) > SHAKE_THRESHOLD) {
     Serial.write('X'); // signal to Python
   }
 
+  delay(50);
 }
 
 void setup() {
@@ -147,5 +150,3 @@ void loop() {
 
   delay(100);
 }
-
-

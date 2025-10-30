@@ -34,15 +34,15 @@ if mode not in ["1", "2"]:
 
 # --- Serial setup ---
 joystick_enabled = False
-port = "COM8"   # change if your Arduino uses another port
+port = "COM3"   # change if your Arduino uses another port
 try:
     ser = serial.Serial(port, 9600, timeout=0.01)
     time.sleep(2)
     ser.reset_input_buffer()
     joystick_enabled = True
-    print(f"✅ Arduino connected on {port}")
+    print(f"Arduino connected on {port}")
 except Exception as e:
-    print(f"⚠️  Could not open {port}: {e}")
+    print(f"Could not open {port}: {e}")
     joystick_enabled = False
 
 if joystick_enabled:
@@ -51,7 +51,7 @@ if joystick_enabled:
         ser.flush()
         print(f"Sent controller mode {mode} to Arduino.")
     except Exception as e:
-        print("⚠️  Failed to send mode:", e)
+        print("Failed to send mode:", e)
 
 # --- Game variables ---
 delay = 0.1
@@ -250,4 +250,3 @@ while True:
     time.sleep(delay)
 
 wn.mainloop()
-
