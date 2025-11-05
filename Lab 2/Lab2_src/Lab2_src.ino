@@ -44,8 +44,7 @@
 /* MPU-6050 */
 const int MPU_addr = 0x68;   // use 0x69 only if AD0 is tied HIGH
 #define TILT_THRESHOLD 0.8  // fraction of 1 g (~0.2 g) tilt to trigger
-#define SHAKE_THRESHOLD 32800
-
+#define SHAKE_THRESHOLD 32700
 /* State */
 int controllerMode = 1;      // 1 = joystick, 2 = gyro
 bool modeSelected = false;
@@ -70,9 +69,9 @@ void send_joystick_command() {
   else if (x < JOY_CENTER - JOY_DEADZONE)
     Serial.write('d'); // right
   else if (y > JOY_CENTER + JOY_DEADZONE)
-    Serial.write('w'); // up
+    Serial.write('s'); // up
   else if (y < JOY_CENTER - JOY_DEADZONE)
-    Serial.write('s'); // down
+    Serial.write('w'); // down
 }
 
 /* Gyro/Accelerometer control */
