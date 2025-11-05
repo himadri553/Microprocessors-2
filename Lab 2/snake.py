@@ -34,7 +34,7 @@ if mode not in ["1", "2"]:
 
 # --- Serial setup ---
 joystick_enabled = False
-port = "COM3"   # change if your Arduino uses another port
+port = "COM8"   # change if your Arduino uses another port
 try:
     ser = serial.Serial(port, 9600, timeout=0.01)
     time.sleep(2)
@@ -176,7 +176,7 @@ while True:
         food.color("yellow")
         double_points = True
         shake_detected = False
-        print("🍋 Shake detected! Next apple worth double points!")
+        print("Shake detected! Next apple worth double points!")
 
     # Border collision
     if head.xcor() > 290 or head.xcor() < -290 or head.ycor() > 290 or head.ycor() < -290:
@@ -209,7 +209,7 @@ while True:
         gained = 10 * (2 if double_points else 1)
         score += gained
         if double_points:
-            print(f"💰 Double points! You earned {gained} points!")
+            print(f"Double points! You earned {gained} points!")
             double_points = False
             food.color("red")
 
