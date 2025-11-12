@@ -22,11 +22,6 @@
   - Communication protocol:
 
 */
-/*
-  Lab 2: Game Control with Joystick / Gyro
-  EECE.5520 - Microprocessor II and Embedded System Design
-  Authors: Himadri Saha, Daniel Burns, Chris Worthley
-*/
 
 #include <Arduino.h>
 #include <Wire.h>
