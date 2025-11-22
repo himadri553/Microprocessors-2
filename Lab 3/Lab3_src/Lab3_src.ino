@@ -4,35 +4,65 @@
   
   Himadri Saha, Daniel Burns, Chris Worthley
 
-  PIN MAPPING
-    D5 → L293D pin 1 (Enable 1,2 – PWM)
+  ---------------------------------------------------------------------------
+  PIN MAPPING (DOUBLE-CHECK YOUR WIRING)
+  ---------------------------------------------------------------------------
+
+  --- MOTOR + L293D ---
+    D5 → L293D pin 1 (Enable – PWM)
     D4 → L293D pin 2 (IN1)
     D3 → L293D pin 7 (IN2)
-    D2 → Pushbutton (to GND, use INPUT_PULLUP)
-    A4 → SDA  (I²C data to RTC)
-    A5 → SCL  (I²C clock to RTC)
-    LCD pins: RS=7, EN=8, D4=9, D5=10, D6=11, D7=12
-    VCC → 5 V, GND → common ground (Arduino + motor + RTC + LCD)
+    Motor → L293D OUT1 + OUT2 (pins 3 & 6)
+    L293D VCC2 (pin 8) → Motor supply (5–9V)
+    L293D VCC1 (pin 16) → 5V
+    All L293D GND pins → GND
 
-  Lab3_src.ino:
-  - Main code for lab 3
-  - 
+  --- BUTTON ---
+    D2 → Button → GND (INPUT_PULLUP)
 
+  --- SOUND SENSOR ---
+    VCC → 5V
+    GND → GND
+    AO  → A0
+
+  --- RTC (DS1307) ---
+    A4 → SDA
+    A5 → SCL
+    VCC → 5V
+    GND → GND
+
+  --- LCD (HD44780 16×2) ---
+    1 (VSS)  → GND
+    2 (VDD)  → 5V
+    3 (VO)   → GND or pot wiper
+    4 (RS)   → D7
+    5 (RW)   → GND
+    6 (EN)   → D8
+    11 (D4)  → D9
+    12 (D5)  → D10
+    13 (D6)  → D11
+    14 (D7)  → D12
+    15 (LED+) → 5V
+    16 (LED–) → GND
+
+  ALL grounds must be common.
+  ---------------------------------------------------------------------------
 */
+
 #include <Wire.h>
 #include <RTClib.h>
 #include <LiquidCrystal.h>
 #include <avr/interrupt.h>
 
 RTC_DS1307 rtc;
-LiquidCrystal lcd(7, 8, 9, 10, 11, 12);   // RS, EN, D4, D5, D6, D7
+LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
 
 // Motor pins
 const int ENA = 5;
 const int IN1 = 4;
 const int IN2 = 3;
 
-// Direction button
+// Button
 const int BTN_DIR = 2;
 bool dirCW = true;
 bool lastButtonState = HIGH;
@@ -41,20 +71,27 @@ const unsigned long debounceDelay = 200;
 
 // Sound sensor
 const int soundPin = A0;
-int soundValue = 0;  // peak-to-peak result
+int soundValue = 0;
 
-// Speed control
+// Motor speed control
 int pwmSpeed = 0;
 String speedLabel = "0";
 
-// Timing
+// Motor timing
 const unsigned long RUN_DURATION = 30000;
 bool motorRunning = false;
 unsigned long motorStartTime = 0;
 
-volatile bool updateDisplay = false;
+// Software clock via Timer1
+volatile bool updateDisplay = false;   
+volatile int hh, mm, ss;
+
+DateTime startTime;
 
 
+// -----------------------------------------------------------------------------
+// SETUP
+// -----------------------------------------------------------------------------
 void setup() {
   Serial.begin(9600);
 
@@ -67,8 +104,12 @@ void setup() {
   // RTC setup
   Wire.begin();
   rtc.begin();
-  // Uncomment ONCE to set RTC time, then re-comment
-  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
+  // Read time ONCE
+  startTime = rtc.now();
+  hh = startTime.hour();
+  mm = startTime.minute();
+  ss = startTime.second();
 
   // LCD setup
   lcd.begin(16, 2);
@@ -77,22 +118,26 @@ void setup() {
   delay(800);
   lcd.clear();
 
-  // Timer1 → 1 Hz ISR
+  // Timer1 → 1Hz interrupt
   cli();
   TCCR1A = 0;
   TCCR1B = 0;
-  TCNT1  = 0;
-  OCR1A = 15624;                      // 1 second at 16MHz/1024
-  TCCR1B |= (1 << WGM12);             
+  TCNT1 = 0;
+  OCR1A = 15624;
+  TCCR1B |= (1 << WGM12);
   TCCR1B |= (1 << CS12) | (1 << CS10);
-  TIMSK1 |= (1 << OCIE1A);            
+  TIMSK1 |= (1 << OCIE1A);
   sei();
 }
 
 
+
+// -----------------------------------------------------------------------------
+// LOOP
+// -----------------------------------------------------------------------------
 void loop() {
 
-  // --- Button handling ---
+  // --- BUTTON ---
   bool reading = digitalRead(BTN_DIR);
   if (reading != lastButtonState && millis() - lastDebounce > debounceDelay) {
     lastDebounce = millis();
@@ -104,19 +149,21 @@ void loop() {
   }
   lastButtonState = reading;
 
-  // --- Peak-to-peak audio measurement ---
+  // --- SOUND ---
   soundValue = readSoundP2P();
 
-  // --- Convert P2P level to motor speed ---
-  if (soundValue < 40) {
+  // ---------------------------------------------------------------------------
+  // VERY LOW OUTPUT SOUND SENSOR THRESHOLDS
+  // ---------------------------------------------------------------------------
+  if (soundValue < 3) {
     pwmSpeed = 0;
     speedLabel = "0";
   }
-  else if (soundValue <120) {
+  else if (soundValue < 10) {
     pwmSpeed = 128;
     speedLabel = "1/2";
   }
-  else if (soundValue < 200) {
+  else if (soundValue < 20) {
     pwmSpeed = 192;
     speedLabel = "3/4";
   }
@@ -124,26 +171,26 @@ void loop() {
     pwmSpeed = 255;
     speedLabel = "Full";
   }
+  // ---------------------------------------------------------------------------
 
-  // REAL-TIME MOTOR SPEED
+  // Apply PWM live
   if (motorRunning)
-      analogWrite(ENA, pwmSpeed);
+    analogWrite(ENA, pwmSpeed);
 
-
-  // RTC-driven schedule: start motor every minute
-  DateTime now = rtc.now();
-  if (now.second() == 0 && !motorRunning) {
+  // START MOTOR once per minute at second 0
+  if (ss == 0 && !motorRunning) {
     startMotor();
     motorRunning = true;
     motorStartTime = millis();
   }
 
+  // STOP MOTOR after 30s
   if (motorRunning && millis() - motorStartTime >= RUN_DURATION) {
     stopMotor();
     motorRunning = false;
   }
 
-  // --- LCD update (from ISR flag) ---
+  // LCD update
   if (updateDisplay) {
     updateDisplay = false;
     updateLCD();
@@ -151,14 +198,24 @@ void loop() {
 }
 
 
-// TIMER1 ISR (fires every 1 second)
 
+// -----------------------------------------------------------------------------
+// TIMER1 ISR (1 second)
+// -----------------------------------------------------------------------------
 ISR(TIMER1_COMPA_vect) {
+  ss++;
+  if (ss >= 60) { ss = 0; mm++; }
+  if (mm >= 60) { mm = 0; hh++; }
+  if (hh >= 24) { hh = 0; }
+
   updateDisplay = true;
 }
 
-// MOTOR FUNCTIONS
 
+
+// -----------------------------------------------------------------------------
+// MOTOR FUNCTIONS
+// -----------------------------------------------------------------------------
 void startMotor() {
   applyDirection();
   analogWrite(ENA, pwmSpeed);
@@ -178,15 +235,16 @@ void applyDirection() {
   }
 }
 
-// LCD UPDATE FUNCTION
 
+
+// -----------------------------------------------------------------------------
+// LCD UPDATE
+// -----------------------------------------------------------------------------
 void updateLCD() {
-  DateTime now = rtc.now();
+  lcd.setCursor(0, 0);
 
   char buf[9];
-  sprintf(buf, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
-
-  lcd.setCursor(0, 0);
+  sprintf(buf, "%02d:%02d:%02d", hh, mm, ss);
   lcd.print(buf);
   lcd.print("   ");
 
@@ -199,15 +257,15 @@ void updateLCD() {
 }
 
 
-// AUDIO SAMPLING: PEAK-TO-PEAK (P2P)
 
-int readSoundP2P()
-{
+// -----------------------------------------------------------------------------
+// SOUND PEAK-TO-PEAK SAMPLING
+// -----------------------------------------------------------------------------
+int readSoundP2P() {
   unsigned long startTime = millis();
   int maxVal = 0;
   int minVal = 1023;
 
-  // 50 ms sampling window
   while (millis() - startTime < 50) {
     int sample = analogRead(soundPin);
     if (sample > maxVal) maxVal = sample;
